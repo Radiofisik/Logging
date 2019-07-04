@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Dtos\Dtos.csproj" />
+    <ProjectReference Include="..\Infrastructure\Infrastructure.csproj" />
     <ProjectReference Include="..\Interceptor\Interceptor.csproj" />
   </ItemGroup>
 

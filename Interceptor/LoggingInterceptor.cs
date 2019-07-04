@@ -8,7 +8,7 @@ using Newtonsoft.Json;
 
 namespace Interceptor
 {
-    public class LoggingInterceptor: IInterceptor
+    public class LoggingInterceptor : IInterceptor
     {
         private readonly ILogger _logger;
 
@@ -21,15 +21,18 @@ namespace Interceptor
         {
             using (_logger.BeginScope("{TargetType}.{Method}", invocation.TargetType.Name, invocation.Method.Name))
             {
+                _logger.LogDebug("Arguments: [{Arguments}]", invocation.Arguments.Select(x => JsonConvert.SerializeObject(x)));
+
                 try
                 {
-                    _logger.LogDebug("Arguments: [{Arguments}]", invocation.Arguments.Select(x => JsonConvert.SerializeObject(x)));
+                    invocation.Proceed();
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
+                    _logger.LogError("{Exception} happened Arguments: [{Arguments}]", ex, invocation.Arguments.Select(x => JsonConvert.SerializeObject(x)));
                 }
 
-                invocation.Proceed();
+                _logger.LogDebug("Result of {Method} invocation is {Result}", invocation.Method.Name, JsonConvert.SerializeObject(invocation.ReturnValue));
             }
         }
     }

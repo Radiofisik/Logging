@@ -1,7 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Threading.Tasks;
 using Dtos;
+using Infrastructure.Result.Abstraction;
+using Infrastructure.Result.Implementation;
 using Microsoft.Extensions.Logging;
 using Services.Abstractions;
 
@@ -16,13 +19,15 @@ namespace Services.Implementation
             _logger = logger;
         }
 
-        public OutputDto DoSomething(InputDto input)
+        public async Task<IResult<OutputDto>> DoSomething(InputDto input)
         {
             _logger.LogInformation("log inside DoSomething");
-           return new OutputDto()
+//           throw new Exception("something went wrong");
+           var result = new OutputDto()
            {
                SomeParam = "outputValue"
            };
+           return new Success<OutputDto>(result);
         }
     }
 }

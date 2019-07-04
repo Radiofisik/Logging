@@ -2,13 +2,16 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Api.Controllers;
 using Autofac;
 using Autofac.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Newtonsoft.Json;
 using Services;
+using Swashbuckle.AspNetCore.Swagger;
 
 namespace AutoFacLogging
 {
@@ -18,6 +21,18 @@ namespace AutoFacLogging
 
         public IServiceProvider ConfigureServices(IServiceCollection services)
         {
+            services.AddSwaggerGen(c =>
+            {
+                c.SwaggerDoc("v1", new Info { Title = "My API", Version = "v1" });
+            });
+
+            services.AddMvcCore()
+                .AddJsonFormatters()
+                .AddJsonOptions(options => options.SerializerSettings.DateTimeZoneHandling = DateTimeZoneHandling.Utc)
+                .AddApiExplorer() // to Swagger UI
+                .AddApplicationPart(typeof(TestController).Assembly)
+                .AddCors();
+
             var builder = new ContainerBuilder();
             builder.Populate(services);
             builder.RegisterSource(new CustomLoggerRegistrator());
@@ -35,10 +50,23 @@ namespace AutoFacLogging
                 app.UseDeveloperExceptionPage();
             }
 
-            app.Run(async (context) =>
+            app.UseCors(
+                builder => builder.AllowAnyHeader()
+                    .AllowAnyMethod()
+                    .AllowAnyOrigin()
+                    .AllowCredentials()
+            );
+
+            app.UseSwagger();
+
+            // Enable middleware to serve swagger-ui (HTML, JS, CSS, etc.), 
+            // specifying the Swagger JSON endpoint.
+            app.UseSwaggerUI(c =>
             {
-                await context.Response.WriteAsync("Hello World!");
+                c.SwaggerEndpoint("/swagger/v1/swagger.json", "My API V1");
             });
+
+            app.UseMvc();
         }
     }
 }
