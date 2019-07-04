@@ -1,14 +1,18 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
+using System.Reflection;
 using System.Text;
+using System.Threading.Tasks;
 using Castle.DynamicProxy;
+using Infrastructure.Result.Implementation;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 
 namespace Interceptor
 {
-    public class LoggingInterceptor : IInterceptor
+    public class LoggingInterceptor : AsyncInterceptor
     {
         private readonly ILogger _logger;
 
@@ -17,22 +21,54 @@ namespace Interceptor
             _logger = logger;
         }
 
-        public void Intercept(IInvocation invocation)
+        protected override void InterceptSync(IInvocation invocation)
         {
             using (_logger.BeginScope("{TargetType}.{Method}", invocation.TargetType.Name, invocation.Method.Name))
             {
-                _logger.LogDebug("Arguments: [{Arguments}]", invocation.Arguments.Select(x => JsonConvert.SerializeObject(x)));
-
                 try
                 {
-                    invocation.Proceed();
+                    _logger.LogDebug("Arguments: [{Arguments}]", invocation.Arguments.Select(x => JsonConvert.SerializeObject(x)));
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
-                    _logger.LogError("{Exception} happened Arguments: [{Arguments}]", ex, invocation.Arguments.Select(x => JsonConvert.SerializeObject(x)));
                 }
 
-                _logger.LogDebug("Result of {Method} invocation is {Result}", invocation.Method.Name, JsonConvert.SerializeObject(invocation.ReturnValue));
+                invocation.Proceed();
+            }
+        }
+
+        protected override async Task InterceptAsync(IInvocation invocation, Type methodReturnType)
+        {
+            using (_logger.BeginScope("{TargetType}.{Method}", invocation.TargetType.Name, invocation.Method.Name))
+            {
+                try
+                {
+                    try
+                    {
+                        _logger.LogDebug("Arguments: [{Arguments}]", invocation.Arguments.Select(x => JsonConvert.SerializeObject(x)));
+                    }
+                    catch (Exception)
+                    {
+                    }
+
+                    invocation.Proceed();
+                    Task result = (Task) invocation.ReturnValue;
+                    await result;
+                }
+                catch (Exception e)
+                {
+                    Type[] typeParams = new Type[] {invocation.Method.ReturnType.GenericTypeArguments[0].GenericTypeArguments[0]};
+                    Type constructedType = typeof(Fail<>).MakeGenericType(typeParams);
+                    var errorInstance = Activator.CreateInstance(constructedType, e);
+
+                    var returnResult = Activator.CreateInstance(invocation.Method.ReturnType, BindingFlags.Instance
+                                                                                              | BindingFlags.NonPublic
+                                                                                              | BindingFlags.CreateInstance,
+                        null, new object[] {errorInstance}, null, null);
+                    invocation.ReturnValue = returnResult;
+                    _logger.LogWarning("Error happened while executing of {TargetType}.{Method} exception is {Exception} with Arguments: [{Arguments}]",
+                        invocation.TargetType.Name, invocation.Method.Name, JsonConvert.SerializeObject(e), invocation.Arguments.Select(x => JsonConvert.SerializeObject(x)));
+                }
             }
         }
     }
