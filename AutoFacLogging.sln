@@ -8,16 +8,20 @@ EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Dtos", "Dtos\Dtos.csproj", "{6D2F26DE-7E00-4F92-A74B-3C3B9637146D}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{860CB76D-4ACE-4DE3-95C7-AF2A645A1763}"
+	ProjectSection(SolutionItems) = preProject
+		Compose\.env = Compose\.env
+		Compose\docker-compose.yml = Compose\docker-compose.yml
+	EndProjectSection
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Services", "Services\Services.csproj", "{F479251A-ACA6-4CDC-B623-78BD4B818393}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Interceptor", "Interceptor\Interceptor.csproj", "{487CA8DF-09F2-4412-8619-6353CDB3A8B1}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Interceptor", "Interceptor\Interceptor.csproj", "{487CA8DF-09F2-4412-8619-6353CDB3A8B1}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Api", "Api\Api.csproj", "{AAF81624-5179-4352-8EDB-73277D13541C}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Api", "Api\Api.csproj", "{AAF81624-5179-4352-8EDB-73277D13541C}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Handlers", "Handlers\Handlers.csproj", "{5807E870-2427-49B9-849A-21E768E6344C}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Handlers", "Handlers\Handlers.csproj", "{5807E870-2427-49B9-849A-21E768E6344C}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Infrastructure", "Infrastructure\Infrastructure.csproj", "{89FD0581-FACC-4CE7-B062-0C10DB17F233}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Infrastructure", "Infrastructure\Infrastructure.csproj", "{89FD0581-FACC-4CE7-B062-0C10DB17F233}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

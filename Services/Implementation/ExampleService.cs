@@ -21,8 +21,10 @@ namespace Services.Implementation
 
         public async Task<IResult<OutputDto>> DoSomething(InputDto input)
         {
+//            return new Fail<OutputDto>();
+
             _logger.LogInformation("log inside DoSomething");
-//           throw new Exception("something went wrong");
+           throw new Exception("something went wrong");
            var result = new OutputDto()
            {
                SomeParam = "outputValue"
