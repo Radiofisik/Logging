@@ -231,7 +231,82 @@ dotnet add package serilog.sinks.elasticsearch
 
 ## Логирование при обработке событий RabbitMQ
 
-Добавим возможность обработки событий https://radiofisik.ru/2019/06/12/rabbit/ .
+Добавим возможность обработки событий https://radiofisik.ru/2019/06/12/rabbit/ . По умолчанию сообщение в Rebus проходит следующие шаги (можно получить добавив в конфигурацию `o.LogPipeline();`)
+
+```
+------------------------------------------------------------------------------
+Message pipelines
+------------------------------------------------------------------------------
+Send pipeline:
+    Rebus.Pipeline.Send.AssignDefaultHeadersStep
+    Rebus.Pipeline.Send.FlowCorrelationIdStep
+    Rebus.Pipeline.Send.AutoHeadersOutgoingStep
+    Rebus.Pipeline.Send.SerializeOutgoingMessageStep
+    Rebus.Pipeline.Send.ValidateOutgoingMessageStep
+    Rebus.Pipeline.Send.SendOutgoingMessageStep
+
+Receive pipeline:
+    Rebus.Retry.Simple.SimpleRetryStrategyStep
+    Rebus.Retry.FailFast.FailFastStep
+    Rebus.Pipeline.Receive.HandleDeferredMessagesStep
+    Rebus.Pipeline.Receive.DeserializeIncomingMessageStep
+    Rebus.Pipeline.Receive.HandleRoutingSlipsStep
+    Rebus.Pipeline.Receive.ActivateHandlersStep
+    Rebus.Sagas.LoadSagaDataStep
+    Rebus.Pipeline.Receive.DispatchIncomingMessageStep
+------------------------------------------------------------------------------
+```
+
+возможно добавить собственный шаг
+
+```c#
+  o.Decorate<IPipeline>(ctx =>
+                    {
+                        var step = new LoggerStep();
+                        var pipeline = ctx.Get<IPipeline>();
+                        return new PipelineStepInjector(pipeline).OnReceive(step, PipelineRelativePosition.After, typeof(ActivateHandlersStep));
+
+                    });
+```
+
+Сам шаг, логирующий все обработки событий, выглядит примерно так
+
+```c#
+using System;
+using System.Collections.Generic;
+using System.Text;
+using System.Threading.Tasks;
+using Autofac;
+using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
+using Rebus.Logging;
+using Rebus.Pipeline;
+using Rebus.Transport;
+
+namespace Infrastructure.Steps
+{
+    public class LoggerStep: IIncomingStep
+    {
+        public async Task Process(IncomingStepContext context, Func<Task> next)
+        {
+            var transactionScope = context.Load<ITransactionContext>();
+            var scope = transactionScope.GetOrNull<ILifetimeScope>("current-autofac-lifetime-scope");
+            var logger = scope.Resolve<ILogger<LoggerStep>>();
+
+            MessageContext.Current.Headers.TryGetValue("rbs2-sender-address", out string eventSender);
+            MessageContext.Current.Headers.TryGetValue("rbs2-msg-type", out string eventType);
+            using (logger.BeginScope(new Dictionary<string, object>(){{"exampleParam", "exampleParamValue"}}))
+            {
+                logger.LogInformation("Event type {EventType} from {EventSender} headers: {Headers}", eventType, eventSender, JsonConvert.SerializeObject(MessageContext.Current.Headers));
+                logger.LogDebug("Event body: {Body}", JsonConvert.SerializeObject(MessageContext.Current.Message.Body));
+                await next();
+            }
+        }
+    }
+}
+```
+
+
 
 
 
