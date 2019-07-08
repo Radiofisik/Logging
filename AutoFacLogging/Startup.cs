@@ -6,6 +6,7 @@ using Api.Controllers;
 using Autofac;
 using Autofac.Extensions.DependencyInjection;
 using Handlers;
+using Infrastructure.MiddleWare;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -67,6 +68,8 @@ namespace AutoFacLogging
             {
                 c.SwaggerEndpoint("/swagger/v1/swagger.json", "My API V1");
             });
+
+            app.UseMiddleware<LoggingMiddleWare>();
 
             app.UseMvc();
         }

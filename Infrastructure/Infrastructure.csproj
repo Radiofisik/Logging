@@ -8,6 +8,9 @@
     <Reference Include="Autofac">
       <HintPath>C:\Users\Aleksandr\.nuget\packages\autofac\4.0.1\lib\netstandard1.1\Autofac.dll</HintPath>
     </Reference>
+    <Reference Include="Microsoft.AspNetCore.Http">
+      <HintPath>C:\Users\Aleksandr\.nuget\packages\microsoft.aspnetcore.http\2.2.0\lib\netstandard2.0\Microsoft.AspNetCore.Http.dll</HintPath>
+    </Reference>
     <Reference Include="Microsoft.AspNetCore.Mvc.Abstractions">
       <HintPath>C:\Users\Aleksandr\.nuget\packages\microsoft.aspnetcore.mvc.abstractions\2.2.0\lib\netstandard2.0\Microsoft.AspNetCore.Mvc.Abstractions.dll</HintPath>
     </Reference>
