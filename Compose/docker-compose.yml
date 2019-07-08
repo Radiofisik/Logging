@@ -4,8 +4,6 @@ services:
   elastic:
       image: docker.elastic.co/elasticsearch/elasticsearch:6.4.0
       restart: always
-      hostname: elastic
-      container_name: elastic
       environment:
         - ES_JAVA_OPTS=-Xms4g -Xmx4g
         - cluster.name=elasticl
@@ -19,14 +17,19 @@ services:
   kibana:
       image: docker.elastic.co/kibana/kibana:6.4.0
       restart: always
-      hostname: kibana
-      container_name: kibana
       ports:
       - 5602:5601
       environment:
         ELASTICSEARCH_URL: http://elastic:9200
       depends_on:
         - elastic
+
+  rabbit:
+     image: rabbitmq:3-management
+     restart: always
+     ports:
+      - 8080:15672
+      - 5672:5672
 
 volumes:
   elastic_data_l: {}

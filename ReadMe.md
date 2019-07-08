@@ -229,13 +229,9 @@ dotnet add package serilog.sinks.elasticsearch
                 );
 ```
 
+## Логирование при обработке событий RabbitMQ
 
-
-
-
-
-
-
+Добавим возможность обработки событий https://radiofisik.ru/2019/06/12/rabbit/ .
 
 
 
