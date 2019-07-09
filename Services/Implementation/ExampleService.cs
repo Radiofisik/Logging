@@ -4,6 +4,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Dtos;
 using Events;
+using Infrastructure.Abstractions;
 using Infrastructure.Result.Abstraction;
 using Infrastructure.Result.Implementation;
 using Microsoft.Extensions.Logging;
@@ -15,9 +16,9 @@ namespace Services.Implementation
     internal sealed class ExampleService: IExampleService
     {
         private readonly ILogger<ExampleService> _logger;
-        private readonly IBus _bus;
+        private readonly IEventBus _bus;
 
-        public ExampleService(ILogger<ExampleService> logger, IBus bus)
+        public ExampleService(ILogger<ExampleService> logger, IEventBus bus)
         {
             _logger = logger;
             _bus = bus;

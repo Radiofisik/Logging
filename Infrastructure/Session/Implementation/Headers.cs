@@ -13,6 +13,7 @@ namespace Infrastructure.Session.Implementation
             {
                 if (!this.ContainsKey(Const.RequestId))
                 {
+                    throw new Exception("RequestId should be set");
                     this[Const.RequestId] = MakeRequestId();
                 } 
                 return this[Const.RequestId];

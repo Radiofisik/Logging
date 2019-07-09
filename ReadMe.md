@@ -23,62 +23,51 @@ dotnet add package Castle.Core
 Создадим сам перехватчик который логирует аргументы вызова
 
 ```c#
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using Castle.DynamicProxy;
-using Microsoft.Extensions.Logging;
-using Newtonsoft.Json;
 
-namespace Interceptor
+public class LoggingInterceptor: IInterceptor
 {
-    public class LoggingInterceptor: IInterceptor
+    private readonly ILogger _logger;
+
+    public LoggingInterceptor(ILogger logger)
     {
-        private readonly ILogger _logger;
+        _logger = logger;
+    }
 
-        public LoggingInterceptor(ILogger logger)
+    public void Intercept(IInvocation invocation)
+    {
+        using (_logger.BeginScope("{TargetType}.{Method}", invocation.TargetType.Name, invocation.Method.Name))
         {
-            _logger = logger;
-        }
-
-        public void Intercept(IInvocation invocation)
-        {
-            using (_logger.BeginScope("{TargetType}.{Method}", invocation.TargetType.Name, invocation.Method.Name))
-            {
-                    _logger.LogDebug("Arguments: [{Arguments}]", invocation.Arguments.Select(x => JsonConvert.SerializeObject(x)));
-                invocation.Proceed();
-            }
+                _logger.LogDebug("Arguments: [{Arguments}]", invocation.Arguments.Select(x => JsonConvert.SerializeObject(x)));
+            invocation.Proceed();
         }
     }
 }
-
 ```
 
 Допустим у нас есть сервис с тестовым методом
 
 ```c#
- public interface IExampleService: IService
-    {
-        OutputDto DoSomething(InputDto input);
-    }
+public interface IExampleService: IService
+{
+    OutputDto DoSomething(InputDto input);
+}
 ```
 
 IService - интерфейс - маркер. Зарегистрируем реализацию сервиса и перехватчик
 
 ```c#
- builder.RegisterType<LoggingInterceptor>();
+builder.RegisterType<LoggingInterceptor>();
 
-            var types =
-                GetType().Assembly.GetTypes()
-                    .Where(type => typeof(IService).IsAssignableFrom(type))
-                    .ToArray();
+        var types =
+            GetType().Assembly.GetTypes()
+                .Where(type => typeof(IService).IsAssignableFrom(type))
+                .ToArray();
 
-            builder.RegisterTypes(types)
-                .InterceptedBy(typeof(LoggingInterceptor))
-                .AsImplementedInterfaces()
-                .InstancePerLifetimeScope()
-                .EnableInterfaceInterceptors();
+        builder.RegisterTypes(types)
+            .InterceptedBy(typeof(LoggingInterceptor))
+            .AsImplementedInterfaces()
+            .InstancePerLifetimeScope()
+            .EnableInterfaceInterceptors();
 ```
 
 Теперь все вызовы методов сервисов IService легируются с аргументами. Однако остается проблема с асинхронными методами. Они возвращают Task который выполняется уже вне контекста интерцептора.
@@ -88,64 +77,60 @@ IService - интерфейс - маркер. Зарегистрируем ре�
 Допустим мы хотим перехватить асинхронный вызов обернуть его в try/catch и залогировать возникшее исключение в автоматическом режиме. Погуглив можно наткнутся на несколько решений данной проблемы.  Одно из них создать перехватчик с двумя методами, один обрабатывает синхронные вызовы, другой асинхронные.
 
 ```c#
-namespace Interceptor
+public abstract class AsyncInterceptor: IInterceptor
 {
-    public abstract class AsyncInterceptor: IInterceptor
+    protected abstract void InterceptSync(IInvocation invocation);
+
+    protected abstract Task InterceptAsync(IInvocation invocation, Type methodReturnType);
+
+    void IInterceptor.Intercept(IInvocation invocation)
     {
-        protected abstract void InterceptSync(IInvocation invocation);
-
-        protected abstract Task InterceptAsync(IInvocation invocation, Type methodReturnType);
-
-        void IInterceptor.Intercept(IInvocation invocation)
+        if (!typeof(Task).IsAssignableFrom(invocation.Method.ReturnType))
         {
-            if (!typeof(Task).IsAssignableFrom(invocation.Method.ReturnType))
-            {
-                InterceptSync(invocation);
-                return;
-            }
-            try
-            {
-                var method = invocation.Method;
+            InterceptSync(invocation);
+            return;
+        }
+        try
+        {
+            var method = invocation.Method;
 
-                if ((method != null) && typeof(Task).IsAssignableFrom(method.ReturnType))
-                {
-                    Task.Factory.StartNew(
-                        async () => { await InterceptAsync(invocation, method.ReturnType).ConfigureAwait(true); }
-                        , CancellationToken.None).Wait();
-                }
-            }
-            catch (Exception ex)
+            if ((method != null) && typeof(Task).IsAssignableFrom(method.ReturnType))
             {
-                //this is not really burring the exception
-                //excepiton is going back in the invocation.ReturnValue which 
-                //is a Task that failed. with the same excpetion 
-                //as ex.
+                Task.Factory.StartNew(
+                    async () => { await InterceptAsync(invocation, method.ReturnType).ConfigureAwait(true); }
+                    , CancellationToken.None).Wait();
             }
+        }
+        catch (Exception ex)
+        {
+            //this is not really burring the exception
+            //excepiton is going back in the invocation.ReturnValue which 
+            //is a Task that failed. with the same excpetion 
+            //as ex.
         }
     }
 }
-
 ```
 
 Сам метод асинхронного перехвата имеет примерно следующий вид
 
 ```c#
 protected override async Task InterceptAsync(IInvocation invocation, Type methodReturnType)
+    {
+        using (_logger.BeginScope("{TargetType}.{Method}", invocation.TargetType.Name, invocation.Method.Name))
         {
-            using (_logger.BeginScope("{TargetType}.{Method}", invocation.TargetType.Name, invocation.Method.Name))
+            try
             {
-                try
-                {
-                    invocation.Proceed();
-                    Task result = (Task) invocation.ReturnValue;
-                    await result;
-                }
-                catch (Exception e)
-                {
-                   //log exception here and modify return to fix it
-                }
+                invocation.Proceed();
+                Task result = (Task) invocation.ReturnValue;
+                await result;
+            }
+            catch (Exception e)
+            {
+               //log exception here and modify return to fix it
             }
         }
+    }
 ```
 
 В репозитории к статье ошибка перехватывается и возвращается в виде специального объекта ошибки, который в дальнейшем может быть обработан вышележащими слоями.
@@ -272,35 +257,21 @@ Receive pipeline:
 Сам шаг, логирующий все обработки событий, выглядит примерно так
 
 ```c#
-using System;
-using System.Collections.Generic;
-using System.Text;
-using System.Threading.Tasks;
-using Autofac;
-using Microsoft.Extensions.Logging;
-using Newtonsoft.Json;
-using Rebus.Logging;
-using Rebus.Pipeline;
-using Rebus.Transport;
-
-namespace Infrastructure.Steps
+public class LoggerStep: IIncomingStep
 {
-    public class LoggerStep: IIncomingStep
+    public async Task Process(IncomingStepContext context, Func<Task> next)
     {
-        public async Task Process(IncomingStepContext context, Func<Task> next)
-        {
-            var transactionScope = context.Load<ITransactionContext>();
-            var scope = transactionScope.GetOrNull<ILifetimeScope>("current-autofac-lifetime-scope");
-            var logger = scope.Resolve<ILogger<LoggerStep>>();
+        var transactionScope = context.Load<ITransactionContext>();
+        var scope = transactionScope.GetOrNull<ILifetimeScope>("current-autofac-lifetime-scope");
+        var logger = scope.Resolve<ILogger<LoggerStep>>();
 
-            MessageContext.Current.Headers.TryGetValue("rbs2-sender-address", out string eventSender);
-            MessageContext.Current.Headers.TryGetValue("rbs2-msg-type", out string eventType);
-            using (logger.BeginScope(new Dictionary<string, object>(){{"exampleParam", "exampleParamValue"}}))
-            {
-                logger.LogInformation("Event type {EventType} from {EventSender} headers: {Headers}", eventType, eventSender, JsonConvert.SerializeObject(MessageContext.Current.Headers));
-                logger.LogDebug("Event body: {Body}", JsonConvert.SerializeObject(MessageContext.Current.Message.Body));
-                await next();
-            }
+        MessageContext.Current.Headers.TryGetValue("rbs2-sender-address", out string eventSender);
+        MessageContext.Current.Headers.TryGetValue("rbs2-msg-type", out string eventType);
+        using (logger.BeginScope(new Dictionary<string, object>(){{"exampleParam", "exampleParamValue"}}))
+        {
+            logger.LogInformation("Event type {EventType} from {EventSender} headers: {Headers}", eventType, eventSender, JsonConvert.SerializeObject(MessageContext.Current.Headers));
+            logger.LogDebug("Event body: {Body}", JsonConvert.SerializeObject(MessageContext.Current.Message.Body));
+            await next();
         }
     }
 }
@@ -311,108 +282,92 @@ namespace Infrastructure.Steps
 .Net Core использует паттерн MiddleWare для обработки запросов. Возможно создание собственного MiddleWare для перехвата всех запросов к нижележащим уровням. Как реализовать такое описано [тут]( https://exceptionnotfound.net/using-middleware-to-log-requests-and-responses-in-asp-net-core/). Чуть изменённый код
 
 ```c#
-using Microsoft.AspNetCore.Http;
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Reflection.Metadata.Ecma335;
-using System.Text;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http.Internal;
-using Microsoft.Extensions.Logging;
-using Newtonsoft.Json;
-
-namespace Infrastructure.MiddleWare
+public sealed class LoggingMiddleWare
 {
-    public sealed class LoggingMiddleWare
+    private readonly RequestDelegate _next;
+
+    public LoggingMiddleWare(RequestDelegate next)
     {
-        private readonly RequestDelegate _next;
+        _next = next;
+    }
 
-        public LoggingMiddleWare(RequestDelegate next)
+    public async Task Invoke(HttpContext context, ILogger logger)
+    {
+        var body = await GetRequestBodyString(context.Request);
+
+        //Copy a pointer to the original response body stream
+        var originalBodyStream = context.Response.Body;
+
+        //Create a new memory stream...
+        using (var responseBody = new MemoryStream())
         {
-            _next = next;
-        }
+            //...and use that for the temporary response body
+            context.Response.Body = responseBody;
 
-        public async Task Invoke(HttpContext context, ILogger logger)
-        {
-            var body = await GetRequestBodyString(context.Request);
-
-            //Copy a pointer to the original response body stream
-            var originalBodyStream = context.Response.Body;
-
-            //Create a new memory stream...
-            using (var responseBody = new MemoryStream())
+            var headers = JsonConvert.SerializeObject(context.Request.Headers.ToDictionary(header => header.Key, header => header.Value));
+            //Continue down the Middleware pipeline, eventually returning to this class
+            using (logger.BeginScope(new Dictionary<string, object>() { { "exampleParam", "exampleParamValue" } }))
             {
-                //...and use that for the temporary response body
-                context.Response.Body = responseBody;
-
-                var headers = JsonConvert.SerializeObject(context.Request.Headers.ToDictionary(header => header.Key, header => header.Value));
-                //Continue down the Middleware pipeline, eventually returning to this class
-                using (logger.BeginScope(new Dictionary<string, object>() { { "exampleParam", "exampleParamValue" } }))
+                using (logger.BeginScope(new Dictionary<string, object> { { "Headers", headers }, { "Body", body } }))
                 {
-                    using (logger.BeginScope(new Dictionary<string, object> { { "Headers", headers }, { "Body", body } }))
-                    {
-                        logger.LogInformation($"HTTP request: {context.Request.Scheme} {context.Request.Host}" + "{RequestPath} {QueryString}", context.Request.Path, context.Request.QueryString);
-                    }
-
-                    await _next(context);
-
-                    //Format the response from the server
-                    var response = await GetResponseBodyString(context.Response);
-
-                    logger.LogDebug("HTTP response status: {status} {body}", context.Response.StatusCode, response);
+                    logger.LogInformation($"HTTP request: {context.Request.Scheme} {context.Request.Host}" + "{RequestPath} {QueryString}", context.Request.Path, context.Request.QueryString);
                 }
 
-                //Copy the contents of the new memory stream (which contains the response) to the original stream, which is then returned to the client.
-                await responseBody.CopyToAsync(originalBodyStream);
+                await _next(context);
+
+                //Format the response from the server
+                var response = await GetResponseBodyString(context.Response);
+
+                logger.LogDebug("HTTP response status: {status} {body}", context.Response.StatusCode, response);
             }
-        }
 
-        private async Task<string> GetRequestBodyString(HttpRequest request)
-        {
-            if (request.ContentType != "application/json")
-                return string.Empty;
-
-            var body = request.Body;
-
-            //This line allows us to set the reader for the request back at the beginning of its stream.
-            request.EnableRewind();
-
-            //We now need to read the request stream.  First, we create a new byte[] with the same length as the request stream...
-            var buffer = new byte[Convert.ToInt32(request.ContentLength)];
-
-            //...Then we copy the entire request stream into the new buffer.
-            await request.Body.ReadAsync(buffer, 0, buffer.Length);
-
-            //We convert the byte[] into a string using UTF8 encoding...
-            var bodyAsText = Encoding.UTF8.GetString(buffer);
-
-            //..and finally, assign the read body back to the request body, which is allowed because of EnableRewind()
-            request.Body = body;
-
-            return bodyAsText;
-        }
-
-        private async Task<string> GetResponseBodyString(HttpResponse response)
-        {
-            if (response.ContentType == "application/json")
-                return string.Empty;
-
-            //We need to read the response stream from the beginning...
-            response.Body.Seek(0, SeekOrigin.Begin);
-
-            //...and copy it into a string
-            string text = await new StreamReader(response.Body).ReadToEndAsync();
-
-            //We need to reset the reader for the response so that the client can read it.
-            response.Body.Seek(0, SeekOrigin.Begin);
-
-            return text;
+            //Copy the contents of the new memory stream (which contains the response) to the original stream, which is then returned to the client.
+            await responseBody.CopyToAsync(originalBodyStream);
         }
     }
-}
 
+    private async Task<string> GetRequestBodyString(HttpRequest request)
+    {
+        if (request.ContentType != "application/json")
+            return string.Empty;
+
+        var body = request.Body;
+
+        //This line allows us to set the reader for the request back at the beginning of its stream.
+        request.EnableRewind();
+
+        //We now need to read the request stream.  First, we create a new byte[] with the same length as the request stream...
+        var buffer = new byte[Convert.ToInt32(request.ContentLength)];
+
+        //...Then we copy the entire request stream into the new buffer.
+        await request.Body.ReadAsync(buffer, 0, buffer.Length);
+
+        //We convert the byte[] into a string using UTF8 encoding...
+        var bodyAsText = Encoding.UTF8.GetString(buffer);
+
+        //..and finally, assign the read body back to the request body, which is allowed because of EnableRewind()
+        request.Body = body;
+
+        return bodyAsText;
+    }
+
+    private async Task<string> GetResponseBodyString(HttpResponse response)
+    {
+        if (response.ContentType == "application/json")
+            return string.Empty;
+
+        //We need to read the response stream from the beginning...
+        response.Body.Seek(0, SeekOrigin.Begin);
+
+        //...and copy it into a string
+        string text = await new StreamReader(response.Body).ReadToEndAsync();
+
+        //We need to reset the reader for the response so that the client can read it.
+        response.Body.Seek(0, SeekOrigin.Begin);
+
+        return text;
+    }
+}
 ```
 
 зарегистрируем MiddleWare `  app.UseMiddleware<LoggingMiddleWare>();`
@@ -444,60 +399,41 @@ namespace Infrastructure.MiddleWare
 Создадим хранилище для контекста с интерфейсом (реализацию см. в репозитории):
 
 ```c#
-using System.Collections.Generic;
-
-namespace Infrastructure.Session.Abstraction
+public interface ISessionStorage
 {
-    public interface ISessionStorage
-    {
-        void SetHeaders(params (string Key, IEnumerable<string> Value)[] headers);
+    void SetHeaders(params (string Key, IEnumerable<string> Value)[] headers);
 
-        //adds to every log message
-        Dictionary<string, string> GetLoggingHeaders();
+    //adds to every log message
+    Dictionary<string, string> GetLoggingHeaders();
 
-        //used as context to call api or enquue messages
-        Dictionary<string, string> GetTraceHeaders();
-    }
+    //used as context to call api or enquue messages
+    Dictionary<string, string> GetTraceHeaders();
 }
-
 ```
 
 И MiddleWare которая устанавливает хедеры из запроса
 
 ```c#
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using Infrastructure.Session.Abstraction;
-using Infrastructure.Session.Implementation;
-using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Logging;
-
-namespace Infrastructure.MiddleWare
+public class SessionMiddleWare
 {
-    public class SessionMiddleWare
+    private readonly RequestDelegate _next;
+
+    public SessionMiddleWare(RequestDelegate next)
     {
-        private readonly RequestDelegate _next;
+        _next = next;
+    }
 
-        public SessionMiddleWare(RequestDelegate next)
+    public async Task Invoke(HttpContext context, ISessionStorage sessionStorage, ILogger logger)
+    {
+        if (!context.Request.Headers.ContainsKey(Headers.Const.RequestId))
         {
-            _next = next;
+            context.Request.Headers.Add(Headers.Const.RequestId, context.TraceIdentifier);
         }
 
-        public async Task Invoke(HttpContext context, ISessionStorage sessionStorage, ILogger logger)
-        {
-            if (!context.Request.Headers.ContainsKey(Headers.Const.RequestId))
-            {
-                context.Request.Headers.Add(Headers.Const.RequestId, context.TraceIdentifier);
-            }
+        var headers = context.Request.Headers.Select(x => (x.Key, x.Value.AsEnumerable())).ToArray();
+        sessionStorage.SetHeaders(headers);
 
-            var headers = context.Request.Headers.Select(x => (x.Key, x.Value.AsEnumerable())).ToArray();
-            sessionStorage.SetHeaders(headers);
-
-            await _next(context);
-        }
+        await _next(context);
     }
 }
 ```
@@ -510,12 +446,115 @@ namespace Infrastructure.MiddleWare
 ```
 
 ```c#
-  builder.RegisterType<SessionStorage>().AsImplementedInterfaces();
+builder.RegisterType<SessionStorage>().InstancePerLifetimeScope().AsImplementedInterfaces();
 ```
 
-В логировании заменим `new Dictionary<string, object>() { { "exampleParam", "exampleParamValue" } }` на полученный из метода GetLoggingHeaders
+В логировании заменим `new Dictionary<string, object>() { { "exampleParam", "exampleParamValue" } }` на полученный из метода GetLoggingHeaders. Получим событие в логах вида
 
+```json
+{
+  "_index": "logstash-2019.07.09",
+  "_type": "logevent",
+  "_id": "-fAX1msBBGBfAn4qf4wR",
+  "_version": 1,
+  "_score": null,
+  "_source": {
+    "@timestamp": "2019-07-09T11:36:31.4048366+02:00",
+    "level": "Debug",
+    "messageTemplate": "HTTP response status: {status} {body}",
+    "message": "HTTP response status: 200 \"{\\\"someParam\\\":\\\"outputValue\\\"}\"",
+    "fields": {
+      "status": 200,
+      "body": "{\"someParam\":\"outputValue\"}",
+      "SourceContext": "Generic Logger",
+      "RequestId": "0HLO4A3C43BC3:00000001",
+      "RequestPath": "/api/test/do-something",
+      "CorrelationId": null,
+      "ConnectionId": "0HLO4A3C43BC3",
+      "Scope": [
+        {
+          "RequestId": "lroS6N7IO0iL4IYEXRBjfg",
+          "CorrelationContext": "lroS6N7IO0iL4IYEXRBjfg",
+          "Email": "unknown"
+        }
+      ]
+    }
+  },
+  "fields": {
+    "@timestamp": [
+      "2019-07-09T09:36:31.404Z"
+    ]
+  },
+  "sort": [
+    1562664991404
+  ]
+}
+```
 
+## Проброс контекста в обработчики событий
+
+Проброс состоит в том что надо то что можно получить из SessionStorage методом ` Dictionary<string, string> GetTraceHeaders();` передать в заголовки сообщения и при получении получить из заголовков. Для получения заголовков и записи в хранилище создадим отдельный шаг.
+
+```c#
+public class HeadersIncomingStep: IIncomingStep
+{
+    public async Task Process(IncomingStepContext context, Func<Task> next)
+    {
+        var transactionScope = context.Load<ITransactionContext>();
+        var scope = transactionScope.GetOrNull<ILifetimeScope>("current-autofac-lifetime-scope");
+        var message = context.Load<Message>();
+        var sessionStorage = scope.Resolve<ISessionStorage>();
+
+        var headers = MessageContext.Current.Headers.Select(x => (x.Key, (new[] { x.Value }).AsEnumerable())).ToArray();
+        sessionStorage.SetHeaders(headers);
+
+        await next();
+    }
+}
+```
+
+зарегистрируем его перед шагом логирования
+
+```c#
+o.Decorate<IPipeline>(ctx =>
+                {
+                    var step = new HeadersIncomingStep();
+                    var pipeline = ctx.Get<IPipeline>();
+                    return new PipelineStepInjector(pipeline).OnReceive(step, PipelineRelativePosition.Before, typeof(LoggerStep));
+
+                });
+```
+
+Осталось при отправки события добавить контекст в header. Это можно сделать в своей обертке IBus либо в отдельном шаге. С отдельным шагом возникла проблема инжекции в обработчик шага контекста Autofac в нужном Scope. Поэтому остановился на обертке IBus
+
+```c#
+ public class EventBus: IEventBus
+    {
+        private readonly IBus _bus;
+        private readonly ISessionStorage _sessionStorage;
+
+        public EventBus(IBus bus, ISessionStorage sessionStorage)
+        {
+            _bus = bus;
+            _sessionStorage = sessionStorage;
+        }
+
+        public Task Publish<TEvent>(TEvent @event)
+        {
+            return _bus.Publish(@event, _sessionStorage.GetTraceHeaders());
+        }
+    }
+```
+
+Заменим везде IBus на IEventBus и зарегистрируем EventBus. В результате для событий также логируется 
+
+```c#
+ { "RequestId", _headers.RequestId },
+ { "CorrelationContext", _headers.CorrelationContext},
+ { "Email", _headers.Email ?? "unknown"},
+```
+
+для всех событий и запросов.
 
 > Git репозиторий получившегося проекта https://github.com/Radiofisik/Logging.git
 

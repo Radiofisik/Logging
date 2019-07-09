@@ -38,7 +38,7 @@ namespace AutoFacLogging
 
             var builder = new ContainerBuilder();
             builder.Populate(services);
-            builder.RegisterType<SessionStorage>().AsImplementedInterfaces();
+            builder.RegisterType<SessionStorage>().InstancePerLifetimeScope().AsImplementedInterfaces();
             builder.RegisterSource(new CustomLoggerRegistrator());
             builder.RegisterModule<ServiceRegistrationModule>();
             builder.RegisterModule<HandlerRegistrationModule>();

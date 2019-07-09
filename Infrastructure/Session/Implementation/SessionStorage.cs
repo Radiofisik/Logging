@@ -35,9 +35,9 @@ namespace Infrastructure.Session.Implementation
         {
             return new Dictionary<string, string>
             {
-                { "RequestId", _headers.RequestId },
-                { "CorrelationContext", _headers.CorrelationContext},
-                { "Email", _headers.Email ?? "unknown"},
+                { Headers.Const.RequestId, _headers.RequestId },
+                { Headers.Const.CorrelationContext, _headers.CorrelationContext},
+                { Headers.Const.Email, _headers.Email ?? "unknown"},
             };
         }
     }
