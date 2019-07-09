@@ -355,13 +355,14 @@ namespace Infrastructure.MiddleWare
                     {
                         logger.LogInformation($"HTTP request: {context.Request.Scheme} {context.Request.Host}" + "{RequestPath} {QueryString}", context.Request.Path, context.Request.QueryString);
                     }
+
                     await _next(context);
+
+                    //Format the response from the server
+                    var response = await GetResponseBodyString(context.Response);
+
+                    logger.LogDebug("HTTP response status: {status} {body}", context.Response.StatusCode, response);
                 }
-
-                //Format the response from the server
-                var response = await GetResponseBodyString(context.Response);
-
-                logger.LogDebug($"HTTP response: {response}");
 
                 //Copy the contents of the new memory stream (which contains the response) to the original stream, which is then returned to the client.
                 await responseBody.CopyToAsync(originalBodyStream);
@@ -407,8 +408,7 @@ namespace Infrastructure.MiddleWare
             //We need to reset the reader for the response so that the client can read it.
             response.Body.Seek(0, SeekOrigin.Begin);
 
-            //Return the string for the response, including the status code (e.g. 200, 404, 401, etc.)
-            return $"{response.StatusCode}: {text}";
+            return text;
         }
     }
 }
@@ -417,6 +417,110 @@ namespace Infrastructure.MiddleWare
 
 зарегистрируем MiddleWare `  app.UseMiddleware<LoggingMiddleWare>();`
 
+## Correlation Context
+
+На данный момент логируются в автоматическом режиме:
+
+- Запросы и ответы API
+- Вызовы методов сервисов и их ошибки
+- Вызовы обработчиков событий
+
+Типичные сценарии логирования которые надо предусмотреть
+
+- Звонит техподдержка и говорит что у пользователя с логином login что-то пошло не так и надо посмотреть что именно. Соответственно необходимо иметь возможность найти сессии пользователя по логину пользователя и привязать все события, запросы и вызовы сервисов к действиям этого пользователя чтобы можно было отследить действия пользователя в общем потоке событий.
+- Некоторый баг приводит к тому что у всех пользователей что-то идет не так и возникает исключение, необходимо понять что именно привело к этому исключению, какие действия пользователя...
+
+Во всех этих случаях  необходимо как-то поддерживать единую цепочку событий, для этого введем CorrelationId. Идея не нова и описана во многих блогах например https://www.stevejgordon.co.uk/asp-net-core-correlation-ids В качестве первоначальной затравки многие используют TraceIdentifier. Так данный идентификатор присваивается первому запросу, хранится в некотором классе с временем жизни равным времени жизни запроса. и включается в хедеры всех исходящих вызовов событий RabbitMQ и API. При начале обработки события или запроса проверяется пришел ли в заголовке данный идентификатор и если пришел то используем его в логах и всех дальнейших действиях иначе считаем что запрос первый и используем TraceIdentifier.
+
+Для решения вопроса о трекинге всех действий пользователя можно добавлять в заголовок логин пользователя в качестве которого может быть использован email. Далее данный email должен содержаться во всех записях логов которые были записаны как результат действия пользователя. Остается вопрос что делать с незарегистрированными пользователями.
+
+Так CorrelationId совместно с email в каждом событии покрывают оба обозначенных кейса. Возможно также стоит добавить API с которого пришел запрос. Для реализации необходимо:
+
+- Сгенерировать CorrelationId при обращении пользователя либо взять входящий запомнить в некотором классе - хранилище и использовать
+  - в каждом запросе к API
+  - в каждом событии в очередь RabbitMQ
+  - при каждой записи в лог
+
+Создадим хранилище для контекста с интерфейсом (реализацию см. в репозитории):
+
+```c#
+using System.Collections.Generic;
+
+namespace Infrastructure.Session.Abstraction
+{
+    public interface ISessionStorage
+    {
+        void SetHeaders(params (string Key, IEnumerable<string> Value)[] headers);
+
+        //adds to every log message
+        Dictionary<string, string> GetLoggingHeaders();
+
+        //used as context to call api or enquue messages
+        Dictionary<string, string> GetTraceHeaders();
+    }
+}
+
+```
+
+И MiddleWare которая устанавливает хедеры из запроса
+
+```c#
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using Infrastructure.Session.Abstraction;
+using Infrastructure.Session.Implementation;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
+
+namespace Infrastructure.MiddleWare
+{
+    public class SessionMiddleWare
+    {
+        private readonly RequestDelegate _next;
+
+        public SessionMiddleWare(RequestDelegate next)
+        {
+            _next = next;
+        }
+
+        public async Task Invoke(HttpContext context, ISessionStorage sessionStorage, ILogger logger)
+        {
+            if (!context.Request.Headers.ContainsKey(Headers.Const.RequestId))
+            {
+                context.Request.Headers.Add(Headers.Const.RequestId, context.TraceIdentifier);
+            }
+
+            var headers = context.Request.Headers.Select(x => (x.Key, x.Value.AsEnumerable())).ToArray();
+            sessionStorage.SetHeaders(headers);
+
+            await _next(context);
+        }
+    }
+}
+```
+
+Зарегистрируем 
+
+```c#
+ app.UseMiddleware<SessionMiddleWare>();
+ app.UseMiddleware<LoggingMiddleWare>();
+```
+
+```c#
+  builder.RegisterType<SessionStorage>().AsImplementedInterfaces();
+```
+
+В логировании заменим `new Dictionary<string, object>() { { "exampleParam", "exampleParamValue" } }` на полученный из метода GetLoggingHeaders
+
 
 
 > Git репозиторий получившегося проекта https://github.com/Radiofisik/Logging.git
+
+Пока не решенные проблемы
+
+- действия незарегистрированных пользователей
+- действия одного пользователя с различных устройств
+- один запрос может быть залогирован много раз в разных местах, что может затруднить анализ логов, необходимо иметь идентификатор запроса который уникален для этого запроса.

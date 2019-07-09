@@ -6,6 +6,7 @@ using System.Linq;
 using System.Reflection.Metadata.Ecma335;
 using System.Text;
 using System.Threading.Tasks;
+using Infrastructure.Session.Abstraction;
 using Microsoft.AspNetCore.Http.Internal;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
@@ -21,7 +22,7 @@ namespace Infrastructure.MiddleWare
             _next = next;
         }
 
-        public async Task Invoke(HttpContext context, ILogger logger)
+        public async Task Invoke(HttpContext context, ILogger logger, ISessionStorage sessionStorage)
         {
             var body = await GetRequestBodyString(context.Request);
 
@@ -36,19 +37,20 @@ namespace Infrastructure.MiddleWare
 
                 var headers = JsonConvert.SerializeObject(context.Request.Headers.ToDictionary(header => header.Key, header => header.Value));
                 //Continue down the Middleware pipeline, eventually returning to this class
-                using (logger.BeginScope(new Dictionary<string, object>() { { "exampleParam", "exampleParamValue" } }))
+                using (logger.BeginScope(sessionStorage.GetLoggingHeaders()))
                 {
                     using (logger.BeginScope(new Dictionary<string, object> { { "Headers", headers }, { "Body", body } }))
                     {
                         logger.LogInformation($"HTTP request: {context.Request.Scheme} {context.Request.Host}" + "{RequestPath} {QueryString}", context.Request.Path, context.Request.QueryString);
                     }
+
                     await _next(context);
+
+                    //Format the response from the server
+                    var response = await GetResponseBodyString(context.Response);
+
+                    logger.LogDebug("HTTP response status: {status} {body}", context.Response.StatusCode, response);
                 }
-
-                //Format the response from the server
-                var response = await GetResponseBodyString(context.Response);
-
-                logger.LogDebug($"HTTP response: {response}");
 
                 //Copy the contents of the new memory stream (which contains the response) to the original stream, which is then returned to the client.
                 await responseBody.CopyToAsync(originalBodyStream);
@@ -94,8 +96,7 @@ namespace Infrastructure.MiddleWare
             //We need to reset the reader for the response so that the client can read it.
             response.Body.Seek(0, SeekOrigin.Begin);
 
-            //Return the string for the response, including the status code (e.g. 200, 404, 401, etc.)
-            return $"{response.StatusCode}: {text}";
+            return text;
         }
     }
 }

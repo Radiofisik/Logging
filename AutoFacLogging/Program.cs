@@ -24,6 +24,7 @@ namespace AutoFacLogging
             WebHost.CreateDefaultBuilder(args)
                 .UseStartup<Startup>()
                 .UseSerilog((hostingContext, loggerConfiguration) => loggerConfiguration
+                    .MinimumLevel.Debug()
                     .ReadFrom.Configuration(hostingContext.Configuration)
                     .Enrich.FromLogContext()
 //                    .WriteTo.Console(new CompactJsonFormatter())

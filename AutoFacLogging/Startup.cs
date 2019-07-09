@@ -7,6 +7,7 @@ using Autofac;
 using Autofac.Extensions.DependencyInjection;
 using Handlers;
 using Infrastructure.MiddleWare;
+using Infrastructure.Session.Implementation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -37,6 +38,7 @@ namespace AutoFacLogging
 
             var builder = new ContainerBuilder();
             builder.Populate(services);
+            builder.RegisterType<SessionStorage>().AsImplementedInterfaces();
             builder.RegisterSource(new CustomLoggerRegistrator());
             builder.RegisterModule<ServiceRegistrationModule>();
             builder.RegisterModule<HandlerRegistrationModule>();
@@ -69,6 +71,7 @@ namespace AutoFacLogging
                 c.SwaggerEndpoint("/swagger/v1/swagger.json", "My API V1");
             });
 
+            app.UseMiddleware<SessionMiddleWare>();
             app.UseMiddleware<LoggingMiddleWare>();
 
             app.UseMvc();
