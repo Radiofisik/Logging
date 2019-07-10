@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Dtos;
 using Events;
 using Infrastructure.Abstractions;
+using Infrastructure.Api.Helpers;
 using Infrastructure.Result.Abstraction;
 using Infrastructure.Result.Implementation;
 using Microsoft.Extensions.Logging;
@@ -13,30 +14,39 @@ using Services.Abstractions;
 
 namespace Services.Implementation
 {
-    internal sealed class ExampleService: IExampleService
+    internal sealed class ExampleService : IExampleService
     {
         private readonly ILogger<ExampleService> _logger;
         private readonly IEventBus _bus;
+        private readonly IHttpClientHelper _httpClientHelper;
 
-        public ExampleService(ILogger<ExampleService> logger, IEventBus bus)
+        public ExampleService(ILogger<ExampleService> logger, IEventBus bus, IHttpClientHelper httpClientHelper)
         {
             _logger = logger;
             _bus = bus;
+            _httpClientHelper = httpClientHelper;
         }
 
         public async Task<IResult<OutputDto>> DoSomething(InputDto input)
         {
-//            return new Fail<OutputDto>();
-
             _logger.LogInformation("log inside DoSomething");
-            await _bus.Publish(new TestEvent(){Content = "event content"});
+            await _bus.Publish(new TestEvent() {Content = "event content"});
 
-//           throw new Exception("something went wrong");
-           var result = new OutputDto()
-           {
-               SomeParam = "outputValue"
-           };
-           return new Success<OutputDto>(result);
+            //            return new Fail<OutputDto>();
+            //           throw new Exception("something went wrong");
+
+            var result = await _httpClientHelper.Get<OutputDto>("http://localhost:5000/api/internal/do-something");
+            return new Success<OutputDto>(result);
+        }
+
+        public async Task<IResult<OutputDto>> DoSomethingInternal()
+        {
+            _logger.LogInformation("log inside DoSomethingInternal");
+            var result = new OutputDto()
+            {
+                SomeParam = "outputValue"
+            };
+            return new Success<OutputDto>(result);
         }
     }
 }

@@ -6,6 +6,7 @@ using Api.Controllers;
 using Autofac;
 using Autofac.Extensions.DependencyInjection;
 using Handlers;
+using Infrastructure.Api.Helpers.Implementations;
 using Infrastructure.MiddleWare;
 using Infrastructure.Session.Implementation;
 using Microsoft.AspNetCore.Builder;
@@ -36,9 +37,13 @@ namespace AutoFacLogging
                 .AddApplicationPart(typeof(TestController).Assembly)
                 .AddCors();
 
+            services.AddHttpClient();
+
             var builder = new ContainerBuilder();
             builder.Populate(services);
             builder.RegisterType<SessionStorage>().InstancePerLifetimeScope().AsImplementedInterfaces();
+            builder.RegisterType<HttpClientHelper>().AsImplementedInterfaces();
+
             builder.RegisterSource(new CustomLoggerRegistrator());
             builder.RegisterModule<ServiceRegistrationModule>();
             builder.RegisterModule<HandlerRegistrationModule>();

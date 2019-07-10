@@ -10,5 +10,6 @@ namespace Services.Abstractions
     public interface IExampleService: IService
     {
         Task<IResult<OutputDto>> DoSomething(InputDto input);
+        Task<IResult<OutputDto>> DoSomethingInternal();
     }
 }
