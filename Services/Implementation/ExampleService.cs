@@ -41,6 +41,7 @@ namespace Services.Implementation
 
         public async Task<IResult<OutputDto>> DoSomethingInternal()
         {
+            _logger.LogWarning("log inside internal DoSomethingInternal");
             _logger.LogInformation("log inside DoSomethingInternal");
             var result = new OutputDto()
             {

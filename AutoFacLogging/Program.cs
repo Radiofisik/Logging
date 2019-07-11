@@ -24,11 +24,11 @@ namespace AutoFacLogging
             WebHost.CreateDefaultBuilder(args)
                 .UseStartup<Startup>()
                 .UseSerilog((hostingContext, loggerConfiguration) => loggerConfiguration
-//                    .MinimumLevel.Debug()
+                    .MinimumLevel.Information()
                     .ReadFrom.Configuration(hostingContext.Configuration)
                     .Enrich.FromLogContext()
-//                    .WriteTo.Console(new CompactJsonFormatter())
                     .WriteTo.Console()
+                    .WriteTo.Console(new CompactJsonFormatter())
                     .WriteTo.Elasticsearch(new ElasticsearchSinkOptions(new Uri("http://docker:19202"))
                     {
                         AutoRegisterTemplate = true,

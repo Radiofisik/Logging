@@ -22,7 +22,7 @@ namespace AutoFacLogging
 
         public void Start()
         {
-            _logger.LogInformation("test");
+            _logger.LogInformation("test on start");
 //            var result = _exampleService.DoSomething(new InputDto() {SomeParam = "inputValue"});
         }
     }

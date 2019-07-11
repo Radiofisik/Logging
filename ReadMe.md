@@ -1,6 +1,6 @@
 ---
-title: Логирование и перехват
-description: Логирование необходимо для отладки, но если в приложении логировать все действия то лог засоряется строчками типа `_logger.LogDebug("something happended {data}", data);` В результате чего код становится трудно читать...
+title: Логирование
+description: Логирование, AOP, CorrelationId, Передача контекста логирования при вызовах API и RabbitMQ, ElasticSearch и Kibana
 ---
 
 ## AOP
@@ -582,12 +582,12 @@ public class HttpClientHelper: IHttpClientHelper
     private readonly HttpClient _httpClient;
     private readonly JsonSerializer _serializer;
 
-    public HttpClientHelper(HttpClient httpClient, Lazy<ISessionStorage> storage)
-    {
-        _httpClient = httpClient;
-        _storage = storage;
-        _serializer = new JsonSerializer();
-    }
+    public HttpClientHelper(IHttpClientFactory factory, Lazy<ISessionStorage> storage)
+        {
+            _httpClient = factory.CreateClient(nameof(HttpClientHelper));
+            _storage = storage;
+            _serializer = new JsonSerializer();
+        }
 
     public Task<TResult> Get<TResult>(string url, params (string key, string value)[] headers)
     {
@@ -644,12 +644,30 @@ public class HttpClientHelper: IHttpClientHelper
 }
 ```
 
-Таким образом при вызове АPI также передается контекст логирования.
+Осталось зарегистрировать сервис
+
+```c#
+services.AddHttpClient();  
+builder.RegisterType<HttpClientHelper>().AsImplementedInterfaces();
+```
+
+
+
+Таким образом при вызове АPI также передается контекст логирования, а вызов API превращается в простой
+
+```c#
+  var result = await _httpClientHelper.Get<OutputDto>("http://localhost:5000/api/internal/do-something");
+```
+
+## Решение проблем
+
+- Возникла проблема в том что вместо того чтобы сохранятся в fields.Email данное поле сохраняется в Scope[0].Email что не удобно при поиске. Как выяснилось `_logger.BeginScope`  если получает словарь типа `Dictionary<string, object>` то сохраняет в свойства, а если словарь типа `Dictionary<string, string>` то как свойство `Scope[0]...` Чтобы привести логирование к ожидаемому варианту изменим сигнатуру метода в `ISessionStorage` на `  Dictionary<string, object> GetLoggingHeaders();`
+
+  
 
 > Git репозиторий получившегося проекта https://github.com/Radiofisik/Logging.git
 
 Пока не решенные проблемы
 
-- действия незарегистрированных пользователей
+- действия незарегистрированных пользователей - как вариант решения корреляция по ip, но это не решит проблему полностью
 - действия одного пользователя с различных устройств
-- один запрос может быть залогирован много раз в разных местах, что может затруднить анализ логов, необходимо иметь идентификатор запроса который уникален для этого запроса.

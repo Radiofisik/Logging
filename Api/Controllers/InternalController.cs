@@ -20,7 +20,7 @@ namespace Api.Controllers
         }
 
         [HttpGet("do-something")]
-        public async Task<IActionResult> DoSomething()
+        public async Task<IActionResult> DoSomethingInternal()
         {
             var result = await _exampleService.DoSomethingInternal();
             return Result(result);

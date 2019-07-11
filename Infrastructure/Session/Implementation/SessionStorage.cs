@@ -21,9 +21,9 @@ namespace Infrastructure.Session.Implementation
             }
         }    
 
-        public Dictionary<string, string> GetLoggingHeaders()
+        public Dictionary<string, object> GetLoggingHeaders()
         {
-            return new Dictionary<string, string>
+            return new Dictionary<string, object>
             {
                 { "RequestId", _headers.RequestId },
                 { "CorrelationContext", _headers.CorrelationContext},
