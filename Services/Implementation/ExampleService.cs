@@ -32,7 +32,7 @@ namespace Services.Implementation
             _logger.LogInformation("log inside DoSomething");
             await _bus.Publish(new TestEvent() {Content = "event content"});
 
-            //            return new Fail<OutputDto>();
+//            return new Fail<OutputDto>(new Exception("test"));
             //           throw new Exception("something went wrong");
 
             var result = await _httpClientHelper.Get<OutputDto>("http://localhost:5000/api/internal/do-something");

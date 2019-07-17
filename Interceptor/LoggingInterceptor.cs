@@ -5,6 +5,7 @@ using System.Linq;
 using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
+using Autofac;
 using Castle.DynamicProxy;
 using Infrastructure.Result.Abstraction;
 using Infrastructure.Result.Implementation;
@@ -50,6 +51,24 @@ namespace Interceptor
                     invocation.Proceed();
                     Task result = (Task) invocation.ReturnValue;
                     await result;
+
+                    var resultProperty = result.GetType().GetProperty("Result");
+                    if (resultProperty != null)
+                    {
+                        var resultValue = resultProperty.GetValue(result);
+                        var resultInterfaces = resultValue.GetType().GetInterfaces();
+
+                        if (resultInterfaces.Any(resultInterface => resultInterface.IsGenericType
+                                                                       && resultInterface.GetGenericTypeDefinition() ==
+                                                                       typeof(ISuccess<>)))
+                        {
+                            LogResult(resultValue);
+                        }
+                        else
+                        {
+                            LogErrorResult(resultValue);
+                        }
+                    }
                 }
                 catch (Exception e)
                 {
@@ -71,6 +90,7 @@ namespace Interceptor
             }
         }
 
+
         private object MakeTaskOfResultOfFail(Type returnType, Type[] tSuccess, Exception e)
         {
             Type constructedType = typeof(Fail<>).MakeGenericType(tSuccess);
@@ -85,15 +105,41 @@ namespace Interceptor
 
         private void LogException(IInvocation invocation, Exception e)
         {
-            _logger.LogWarning("Error happened while executing of {TargetType}.{Method} exception is {Exception} with Arguments: [{Arguments}]",
-                invocation.TargetType.Name, invocation.Method.Name, JsonConvert.SerializeObject(e), invocation.Arguments.Select(x => JsonConvert.SerializeObject(x)));
+            _logger.LogWarning(
+                "Error happened while executing of {TargetType}.{Method} exception is {Exception} with Arguments: [{Arguments}]",
+                invocation.TargetType.Name, invocation.Method.Name, JsonConvert.SerializeObject(e),
+                invocation.Arguments.Select(x => JsonConvert.SerializeObject(x)));
+        }
+
+        private void LogResult(object result)
+        {
+            try
+            {
+                _logger.LogInformation("Result of method invokation is {Result}", JsonConvert.SerializeObject(result));
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private void LogErrorResult(object resultValue)
+        {
+            try
+            {
+                _logger.LogError("Result of method invokation is ERROR {Result}",
+                    JsonConvert.SerializeObject(resultValue));
+            }
+            catch (Exception)
+            {
+            }
         }
 
         private void LogArguments(IInvocation invocation)
         {
             try
             {
-                _logger.LogDebug("Arguments: [{Arguments}]", invocation.Arguments.Select(x => JsonConvert.SerializeObject(x)));
+                _logger.LogDebug("Arguments: [{Arguments}]",
+                    invocation.Arguments.Select(x => JsonConvert.SerializeObject(x)));
             }
             catch (Exception)
             {
